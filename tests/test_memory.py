@@ -3,7 +3,7 @@ import tempfile
 import unittest
 
 from companion_memory.config import Config
-from companion_memory.context import ContextBuilder
+from companion_memory.context import ContextBuilder, sanitize_tool_messages
 from companion_memory.db import MemoryStore
 
 
@@ -15,6 +15,19 @@ class MemoryStoreTests(unittest.TestCase):
     def tearDown(self):
         self.store.close()
         self.tmp.cleanup()
+
+
+    def test_orphan_tool_message_is_removed(self):
+        messages = [
+            {"role": "system", "content": "sys"},
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "call-1", "type": "function"}]},
+            {"role": "tool", "tool_call_id": "call-1", "content": "ok"},
+            {"role": "tool", "tool_call_id": "call-orphan", "content": "bad"},
+            {"role": "user", "content": "继续"},
+        ]
+        cleaned = sanitize_tool_messages(messages)
+        self.assertEqual([m.get("role") for m in cleaned], ["system", "assistant", "tool", "user"])
+        self.assertEqual(cleaned[2]["tool_call_id"], "call-1")
 
     def test_extracts_and_retrieves_facts(self):
         text = "我叫条猫，我喜欢喝冰美式，我讨厌香菜"

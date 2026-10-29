@@ -9,6 +9,35 @@ from .db import MemoryStore, message_text
 from .tokens import estimate_messages_tokens, estimate_tokens, text_of, truncate_text
 
 
+def sanitize_tool_messages(messages: list[dict]) -> list[dict]:
+    """Drop orphaned tool results created by budget trimming.
+
+    OpenAI-compatible APIs reject a ``tool`` message unless a preceding
+    assistant message contains the matching ``tool_calls`` entry.  When old
+    turns are dropped, a tool result can survive without its assistant call;
+    that is invalid and causes a 400 from the upstream model.
+    """
+    filtered: list[dict] = []
+    valid_call_ids: set[str] = set()
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        role = message.get("role")
+        if role == "assistant":
+            filtered.append(message)
+            for call in message.get("tool_calls") or []:
+                if isinstance(call, dict) and call.get("id"):
+                    valid_call_ids.add(str(call["id"]))
+        elif role == "tool":
+            call_id = message.get("tool_call_id")
+            if call_id is not None and str(call_id) in valid_call_ids:
+                filtered.append(message)
+            # An orphaned tool result is silently removed.
+        else:
+            filtered.append(message)
+    return filtered
+
+
 @dataclass
 class PreparedContext:
     messages: list[dict]
@@ -161,9 +190,10 @@ class ContextBuilder:
             selected.append(compact)
             selected_tokens += estimate_messages_tokens([compact])
 
-        assembled = systems + selected
+        sanitized_selected = sanitize_tool_messages(selected)
+        assembled = systems + sanitized_selected
         optimized_tokens = estimate_messages_tokens(assembled)
-        dropped = max(0, len(dialogue) - len(selected))
+        dropped = max(0, len(dialogue) - len(sanitized_selected))
 
         return PreparedContext(
             messages=assembled,
