@@ -1,0 +1,13 @@
+services:
+  companion-memory:
+    build: .
+    env_file: .env
+    environment:
+      MEMORY_HOST: 0.0.0.0
+      MEMORY_PORT: 8787
+      MEMORY_DB: /app/data/memory.db
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

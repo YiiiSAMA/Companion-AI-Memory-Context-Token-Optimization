@@ -1,0 +1,11 @@
+.env
+data/*.db
+data/*.db-*
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+
+# Local-only deploy key for this repository
+.git-ssh/

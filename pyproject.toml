@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "companion-ai-memory"
+version = "0.1.0"
+description = "Human-inspired memory and context/token optimization for AI companions"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Companion AI Memory contributors" }]
+keywords = ["ai", "memory", "context", "token", "openai", "astrbot"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+dependencies = []
+
+[project.scripts]
+companion-memory = "companion_memory.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["companion_memory*"]
