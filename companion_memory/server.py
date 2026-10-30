@@ -544,10 +544,13 @@ class ProxyHandler(BaseHTTPRequestHandler):
     def _should_inject_self(self, cid: str) -> bool:
         if not self.config.self_continuity_enabled:
             return False
-        if not self.store.latest_self_note(cid):
+        note = self.store.latest_self_note(cid)
+        if not note:
             return False
         last = self.store.last_activity_at(cid)
         if not last:
+            return True
+        if str(note.get("created_at") or "") > str(last):
             return True
         try:
             last_dt = datetime.strptime(last, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
