@@ -47,6 +47,8 @@ class PreparedContext:
     memory_count: int = 0
     recent_count: int = 0
     dropped_messages: int = 0
+    self_injected: bool = False
+    self_tokens: int = 0
     memories: list[dict] = field(default_factory=list)
 
     @property
@@ -88,6 +90,7 @@ class ContextBuilder:
         messages: list[dict],
         *,
         query: str | None = None,
+        inject_self: bool = False,
     ) -> PreparedContext:
         """Build a token-bounded request while preserving the latest user turn."""
         original_tokens = estimate_messages_tokens(messages)
@@ -95,6 +98,22 @@ class ContextBuilder:
 
         systems = [dict(m) for m in messages if isinstance(m, dict) and m.get("role") == "system"]
         dialogue = [dict(m) for m in messages if isinstance(m, dict) and m.get("role") != "system"]
+
+        self_tokens = 0
+        self_injected = False
+        if inject_self and self.config.self_continuity_enabled:
+            note = self.store.latest_self_note(conversation_id)
+            if note:
+                note_text = str(note.get("content") or "").strip()
+                note_text = truncate_text(note_text, self.config.self_note_max_tokens)
+                if note_text:
+                    self_block = "[自我连续性｜昨天的我]\n" + note_text + "\n[/自我连续性]"
+                    self_tokens = estimate_tokens(self_block)
+                    if systems:
+                        systems[-1]["content"] = (text_of(systems[-1].get("content")) + "\n\n" + self_block).strip()
+                    else:
+                        systems = [{"role": "system", "content": self_block}]
+                    self_injected = True
 
         query = (query if query is not None else self.latest_user_text(messages)).strip()
         memories = self.store.search_memories(
@@ -203,5 +222,7 @@ class ContextBuilder:
             memory_count=len(memories),
             recent_count=len(selected),
             dropped_messages=dropped,
+            self_injected=self_injected,
+            self_tokens=self_tokens,
             memories=memories,
         )

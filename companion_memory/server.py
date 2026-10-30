@@ -8,7 +8,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -197,6 +197,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
         stream = bool(payload.get("stream"))
         model = str(payload.get("model") or self.config.upstream_model)
         started = time.monotonic()
+        inject_self = self._should_inject_self(cid)
 
         self.store.upsert_messages(cid, messages)
         latest_user = self.builder.latest_user_text(messages)
@@ -233,7 +234,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             except Exception:
                 LOG.exception("pre-build consolidation failed")
 
-        prepared = self.builder.build(cid, messages, query=latest_user)
+        prepared = self.builder.build(cid, messages, query=latest_user, inject_self=inject_self)
         payload = dict(payload)
         payload["messages"] = prepared.messages
         if "stream" in payload:
@@ -538,6 +539,26 @@ class ProxyHandler(BaseHTTPRequestHandler):
         except Exception:
             LOG.exception("LLM scored summarization failed; using fallback")
             return fallback
+
+
+    def _should_inject_self(self, cid: str) -> bool:
+        if not self.config.self_continuity_enabled:
+            return False
+        if not self.store.latest_self_note(cid):
+            return False
+        last = self.store.last_activity_at(cid)
+        if not last:
+            return True
+        try:
+            last_dt = datetime.strptime(last, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            if (now - last_dt).total_seconds() >= self.config.self_inject_gap_hours * 3600:
+                return True
+            if last_dt.astimezone().date() != now.astimezone().date():
+                return True
+        except Exception:
+            return True
+        return False
 
     def _maybe_export_markdown(self, cid: str) -> None:
         if not self.config.markdown_auto_export:

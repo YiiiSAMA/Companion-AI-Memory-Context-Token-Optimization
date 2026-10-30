@@ -8,8 +8,10 @@ import os
 from pathlib import Path
 
 from .config import Config
+from .curator import MemoryCurator
 from .db import MemoryStore
 from .markdown import MarkdownMirror
+from .self_continuity import SelfContinuity
 from .server import run
 
 
@@ -73,6 +75,16 @@ def main(argv: list[str] | None = None) -> int:
     consolidate = sub.add_parser("consolidate", help="compress old unconsolidated turns")
     consolidate.add_argument("--conversation-id", default="default")
 
+    curate = sub.add_parser("curate", help="review and adjust memory scores")
+    curate.add_argument("--conversation-id", default="default")
+    curate.add_argument("--limit", type=int, default=30)
+    curate.add_argument("--dry-run", action="store_true")
+
+    self_note = sub.add_parser("self-note", help="write yesterday's first-person self note")
+    self_note.add_argument("--conversation-id", default="default")
+    self_note.add_argument("--hours", type=int, default=24)
+    self_note.add_argument("--dry-run", action="store_true")
+
     sub.add_parser("rebuild-fts", help="rebuild the FTS index from stored memories")
 
     args = parser.parse_args(argv)
@@ -115,6 +127,20 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         elif args.command == "rebuild-fts":
             print(json.dumps({"indexed": store.rebuild_fts()}))
+        elif args.command == "curate":
+            result = MemoryCurator(store, config).run(
+                args.conversation_id,
+                limit=args.limit,
+                dry_run=args.dry_run,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        elif args.command == "self-note":
+            result = SelfContinuity(store, config).generate(
+                args.conversation_id,
+                hours=args.hours,
+                dry_run=args.dry_run,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
     finally:
         store.close()
     return 0

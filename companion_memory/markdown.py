@@ -41,6 +41,7 @@ _KIND_LABEL = {
     "summary": "摘要",
     "commitment": "承诺",
     "relationship": "关系",
+    "self": "自我",
 }
 
 _KIND_TAG = {
@@ -51,6 +52,7 @@ _KIND_TAG = {
     "summary": "SUMMARY",
     "commitment": "PROMISE",
     "relationship": "REL",
+    "self": "SELF",
 }
 
 
@@ -103,6 +105,8 @@ def _target_file(memory: dict) -> str:
         return "open-loops.md"
     if kind == "relationship":
         return "relationships.md"
+    if kind == "self":
+        return f"self/{_date_of(memory)}.md"
     if kind == "episode":
         return f"episodes/{_date_of(memory)}.md"
     return "facts.md"
@@ -175,10 +179,15 @@ class MarkdownMirror:
             target.write_text("\n".join(cards), encoding="utf-8")
 
         # Always create core files so the layout is predictable.
-        for rel in ("identity.md", "preferences.md", "facts.md", "open-loops.md", "relationships.md"):
+        for rel in ("identity.md", "preferences.md", "facts.md", "open-loops.md", "relationships.md", "self.md"):
             path = tmp / rel
             if not path.exists():
                 path.write_text("# 暂无记录\n", encoding="utf-8")
+
+        self_cards = [m for m in memories if m.get("kind") == "self" and m.get("status") == "active"]
+        if self_cards:
+            latest = max(self_cards, key=lambda m: (str(m.get("created_at") or ""), int(m.get("id") or 0)))
+            (tmp / "self.md").write_text(render_card(latest), encoding="utf-8")
 
         manifest = {
             "conversation_id": conversation_id,
@@ -210,6 +219,8 @@ class MarkdownMirror:
             "| `summaries/` | 按周归档的摘要 |",
             "| `open-loops.md` | 未完成承诺 / 约定 |",
             "| `relationships.md` | 关系锚点、相处规则、边界 |",
+            "| `self.md` | 最新一份“昨天的我” |",
+            "| `self/` | 按日期归档的自我笔记 |",
             "",
             "> SQLite 是事实来源；这些文件是镜像，自动导出会覆盖手工修改。",
         ]
@@ -225,6 +236,7 @@ class MarkdownMirror:
 - 每张卡片有 YAML frontmatter：`id`、`type`、`importance`、`confidence`、`status`、`source_messages`。
 - 正文中的紧凑行是给模型读的“记忆 DSL”：
   `[PREF|mem_000001|0.75] 用户喜欢喝冰美式`
+- `self/` 是按日期归档的“昨天的我”，`self.md` 是最新一份。
 - `source_messages` 对应原始消息 ID，事实出现分歧时以原始消息为准。
 
 ## 记忆编码器提示词

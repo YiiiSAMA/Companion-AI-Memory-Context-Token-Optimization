@@ -61,6 +61,13 @@ def clean_text(value: str) -> str:
     return compact_whitespace(_SYSTEM_REMINDER_RE.sub("", value or ""))
 
 
+def clean_text_keep_lines(value: str) -> str:
+    """Remove injected timestamps but preserve intentional Markdown lines."""
+    raw = _SYSTEM_REMINDER_RE.sub("", value or "")
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in raw.splitlines()]
+    return "\n".join(line for line in lines if line)
+
+
 def message_text(message: dict) -> str:
     return clean_text(text_of(message.get("content")))
 
@@ -177,6 +184,22 @@ class MemoryStore:
 
                 CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
                     USING fts5(memory_id UNINDEXED, search_text, tokenize='unicode61');
+
+                CREATE TABLE IF NOT EXISTS memory_reviews (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    conversation_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    model TEXT,
+                    proposed INTEGER NOT NULL DEFAULT 0,
+                    applied INTEGER NOT NULL DEFAULT 0,
+                    rejected INTEGER NOT NULL DEFAULT 0,
+                    changes TEXT NOT NULL DEFAULT '[]',
+                    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                    completion_tokens INTEGER NOT NULL DEFAULT 0,
+                    error TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_memory_reviews_cid
+                    ON memory_reviews (conversation_id, created_at);
 
                 CREATE TABLE IF NOT EXISTS request_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -346,8 +369,9 @@ class MemoryStore:
         source_message_ids: list[int] | None = None,
         pinned: bool = False,
         metadata: dict | None = None,
+        preserve_newlines: bool = False,
     ) -> int:
-        content = clean_text(content)
+        content = clean_text_keep_lines(content) if preserve_newlines else clean_text(content)
         if not content:
             raise ValueError("memory content is empty")
         self.ensure_conversation(conversation_id)
@@ -551,6 +575,7 @@ class MemoryStore:
             "fact": "事实",
             "summary": "摘要",
             "episode": "经历",
+            "self": "自我",
         }.get(kind, "记忆")
         if key.startswith("preference:like"):
             label = "喜欢"
@@ -566,6 +591,23 @@ class MemoryStore:
         prefix = "【急】" if urgency >= 0.7 else ""
         suffix = f"（截止 {due}）" if due else ""
         return f"- {prefix}{label}：{content}{suffix}"
+
+    def latest_self_note(self, conversation_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM memories WHERE conversation_id=? AND kind='self' "
+                "AND status='active' ORDER BY created_at DESC, id DESC LIMIT 1",
+                (conversation_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def last_activity_at(self, conversation_id: str) -> str | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT MAX(created_at) AS last_at FROM messages WHERE conversation_id=?",
+                (conversation_id,),
+            ).fetchone()
+        return row["last_at"] if row and row["last_at"] else None
 
     # ------------------------------------------------------------------
     # Consolidation
@@ -706,6 +748,42 @@ class MemoryStore:
                     int(latency_ms),
                 ),
             )
+
+    def log_review(
+        self,
+        conversation_id: str,
+        *,
+        model: str = "",
+        proposed: int = 0,
+        applied: int = 0,
+        rejected: int = 0,
+        changes: list[dict] | None = None,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        error: str | None = None,
+    ) -> int:
+        with self._lock, self.conn:
+            cur = self.conn.execute(
+                """
+                INSERT INTO memory_reviews
+                    (conversation_id, created_at, model, proposed, applied, rejected,
+                     changes, prompt_tokens, completion_tokens, error)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    conversation_id,
+                    now_iso(),
+                    model,
+                    int(proposed),
+                    int(applied),
+                    int(rejected),
+                    json.dumps(changes or [], ensure_ascii=False),
+                    int(prompt_tokens),
+                    int(completion_tokens),
+                    error,
+                ),
+            )
+            return int(cur.lastrowid)
 
     def stats(self, conversation_id: str | None = None) -> dict:
         where = "WHERE conversation_id=?" if conversation_id else ""

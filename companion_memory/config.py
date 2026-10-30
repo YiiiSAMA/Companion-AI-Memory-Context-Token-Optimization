@@ -51,6 +51,9 @@ class Config:
     enable_consolidation: bool = True
     markdown_dir: str = "./data/memory-md"
     markdown_auto_export: bool = False
+    self_continuity_enabled: bool = True
+    self_inject_gap_hours: int = 6
+    self_note_max_tokens: int = 350
 
     # Defaults
     default_conversation_id: str = "default"
@@ -85,6 +88,9 @@ class Config:
             enable_consolidation=values.get("MEMORY_ENABLE_CONSOLIDATION", "1") not in ("0", "false", "False"),
             markdown_dir=values.get("MEMORY_MARKDOWN_DIR", "./data/memory-md"),
             markdown_auto_export=values.get("MEMORY_MARKDOWN_AUTO_EXPORT", "0") not in ("0", "false", "False"),
+            self_continuity_enabled=values.get("MEMORY_SELF_CONTINUITY", "1") not in ("0", "false", "False"),
+            self_inject_gap_hours=_env_int("MEMORY_SELF_INJECT_GAP_HOURS", 6),
+            self_note_max_tokens=_env_int("MEMORY_SELF_NOTE_MAX_TOKENS", 350),
             default_conversation_id=values.get("MEMORY_DEFAULT_CONVERSATION", "default"),
             log_level=values.get("MEMORY_LOG_LEVEL", "INFO"),
         )
