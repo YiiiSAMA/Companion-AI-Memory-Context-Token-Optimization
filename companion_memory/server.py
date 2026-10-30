@@ -412,7 +412,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
         lines = []
         for message in selected:
             role = "用户" if message.get("role") == "user" else "知言"
-            text = str(message.get("content") or "")[:600]
+            text = str(message.get("content") or "")
+            text = re.sub(r"<system_reminder>.*?</system_reminder>", "", text, flags=re.S)
+            text = text.strip()[:600]
             if text:
                 lines.append(f"{role}：{text}")
         transcript = "\n".join(lines)
@@ -436,7 +438,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             "model": self.config.effective_summary_model(),
             "messages": prompt,
             "temperature": 0.2,
-            "max_tokens": 400,
+            "max_tokens": 900,
             "stream": False,
         }
         try:
