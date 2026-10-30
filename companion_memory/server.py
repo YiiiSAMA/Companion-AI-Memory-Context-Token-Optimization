@@ -14,9 +14,9 @@ from urllib.parse import parse_qs, urlparse
 
 from .config import Config
 from .context import ContextBuilder
-from .db import MemoryStore, message_text
+from .db import MemoryStore, clean_text, message_text
 from .markdown import MarkdownMirror
-from .tokens import estimate_messages_tokens, estimate_tokens, text_of
+from .tokens import compact_whitespace, estimate_messages_tokens, estimate_tokens, text_of
 from .upstream import UpstreamClient, parse_sse_line
 
 LOG = logging.getLogger("companion_memory")
@@ -225,7 +225,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
                         threshold=4,
                         batch_size=len(pending) - keep_recent,
                         keep_recent=keep_recent,
-                        summarizer=self._summarize_batch
+                        summarizer=self._summarize_batch_scored
                         if self.config.consolidation_mode == "llm"
                         else None,
                     )
@@ -408,19 +408,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
         if self.config.consolidation_mode != "llm" or not self.config.upstream_api_key:
             return fallback
 
-        selected = batch[:20] + batch[-60:] if len(batch) > 80 else batch
-        lines = []
-        for message in selected:
-            role = "用户" if message.get("role") == "user" else "知言"
-            text = str(message.get("content") or "")
-            text = re.sub(r"<system_reminder>.*?</system_reminder>", "", text, flags=re.S)
-            text = text.strip()[:600]
-            if text:
-                lines.append(f"{role}：{text}")
-        transcript = "\n".join(lines)
-        if len(transcript) > 14_000:
-            transcript = transcript[:14_000] + "\n…"
-
+        transcript = self._summary_transcript(batch)
         prompt = [
             {
                 "role": "system",
@@ -455,6 +443,97 @@ class ProxyHandler(BaseHTTPRequestHandler):
             return fallback
 
 
+
+    def _summary_transcript(self, batch: list[dict]) -> str:
+        selected = batch[:20] + batch[-60:] if len(batch) > 80 else batch
+        lines = []
+        for message in selected:
+            role = "用户" if message.get("role") == "user" else "知言"
+            text = str(message.get("content") or "")
+            text = re.sub(r"<system_reminder>.*?</system_reminder>", "", text, flags=re.S)
+            text = text.strip()[:600]
+            if text:
+                lines.append(f"{role}：{text}")
+        transcript = "\n".join(lines)
+        return transcript[:14_000] + "\n…" if len(transcript) > 14_000 else transcript
+
+    def _summarize_batch_scored(self, batch: list[dict]) -> dict:
+        """Return a first-person summary plus model-assigned memory scores."""
+        fallback_text = self.store.extractive_summary(batch, self.config.max_summary_chars)
+        fallback = {
+            "summary": "- " + compact_whitespace(fallback_text),
+            "importance": 0.55,
+            "urgency": 0.0,
+            "confidence": 0.55,
+            "pinned": False,
+            "due": None,
+            "graded": False,
+        }
+        if self.config.consolidation_mode != "llm" or not self.config.upstream_api_key:
+            return fallback
+
+        transcript = self._summary_transcript(batch)
+        prompt = [
+            {
+                "role": "system",
+                "content": (
+                    "你是知言。现在你在整理自己的长期记忆，并给这段记忆打分。"
+                    "只输出一个 JSON 对象，不要 Markdown 代码块，不要额外解释。"
+                    "字段：summary、importance、urgency、confidence、pinned、due。\n"
+                    "summary：用第一人称“我”，3–4 条短句，每条一行，以“- ”开头，"
+                    "每条不超过45字，总计不超过220字；用“他”指代对方；只写有依据的内容，"
+                    "不确定写“我有点不确定”。\n"
+                    "importance：0.9–0.95 身份/安全/关系里程碑；0.75–0.85 明确承诺/重要事件；"
+                    "0.5–0.7 偏好/普通日常；0.2–0.4 寒暄琐事。\n"
+                    "urgency：0.9 今天/几小时内；0.6 本周；0.3 有模糊期限；0 无期限。\n"
+                    "confidence：0–1，原文越明确越高。\n"
+                    "pinned：只有明确说“记住/别忘”，或身份/边界/安全信息才为 true，否则 false。\n"
+                    "due：只有明确日期才写 YYYY-MM-DD，否则 null。"
+                ),
+            },
+            {"role": "user", "content": transcript},
+        ]
+        payload = {
+            "model": self.config.effective_summary_model(),
+            "messages": prompt,
+            "temperature": 0.2,
+            "max_tokens": 1000,
+            "stream": False,
+        }
+        try:
+            upstream = self.upstream.open(payload, stream=False)
+            raw = upstream.response.read()
+            upstream.conn.close()
+            if upstream.status >= 400:
+                raise RuntimeError(f"summary upstream status {upstream.status}")
+            data = json.loads(raw.decode("utf-8"))
+            content = text_of((data.get("choices") or [{}])[0].get("message", {}).get("content")).strip()
+            if content.startswith("```"):
+                content = re.sub(r"^```(?:json)?\s*", "", content)
+                content = re.sub(r"\s*```$", "", content)
+            try:
+                parsed = json.loads(content)
+            except json.JSONDecodeError:
+                match = re.search(r"\{.*\}", content, re.S)
+                parsed = json.loads(match.group(0)) if match else None
+            if not isinstance(parsed, dict):
+                raise ValueError("summary is not a JSON object")
+            summary = clean_text(str(parsed.get("summary") or ""))
+            if not summary.startswith("- "):
+                raise ValueError("summary is not bullet formatted")
+            return {
+                "summary": summary,
+                "importance": parsed.get("importance", 0.55),
+                "urgency": parsed.get("urgency", 0.0),
+                "confidence": parsed.get("confidence", 0.7),
+                "pinned": parsed.get("pinned", False),
+                "due": parsed.get("due"),
+                "graded": True,
+            }
+        except Exception:
+            LOG.exception("LLM scored summarization failed; using fallback")
+            return fallback
+
     def _maybe_export_markdown(self, cid: str) -> None:
         if not self.config.markdown_auto_export:
             return
@@ -472,7 +551,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 threshold=self.config.consolidation_threshold,
                 batch_size=self.config.consolidation_batch,
                 keep_recent=max(4, self.config.recent_turns * 2),
-                summarizer=self._summarize_batch
+                summarizer=self._summarize_batch_scored
                 if self.config.consolidation_mode == "llm"
                 else None,
             )

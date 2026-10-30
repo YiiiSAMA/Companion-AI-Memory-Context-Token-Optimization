@@ -157,6 +157,8 @@ class MemoryStore:
                     content TEXT NOT NULL,
                     importance REAL NOT NULL DEFAULT 0.5,
                     confidence REAL NOT NULL DEFAULT 0.8,
+                    urgency REAL NOT NULL DEFAULT 0.0,
+                    due_at TEXT,
                     source_message_ids TEXT,
                     status TEXT NOT NULL DEFAULT 'active',
                     superseded_by INTEGER,
@@ -195,6 +197,19 @@ class MemoryStore:
                 CREATE INDEX IF NOT EXISTS idx_request_logs_cid
                     ON request_logs (conversation_id, created_at);
                 """
+            )
+        self._ensure_memory_columns()
+
+    def _ensure_memory_columns(self) -> None:
+        with self._lock, self.conn:
+            cols = {row[1] for row in self.conn.execute("PRAGMA table_info(memories)")}
+            if "urgency" not in cols:
+                self.conn.execute("ALTER TABLE memories ADD COLUMN urgency REAL NOT NULL DEFAULT 0.0")
+            if "due_at" not in cols:
+                self.conn.execute("ALTER TABLE memories ADD COLUMN due_at TEXT")
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memories_cid_urgency "
+                "ON memories (conversation_id, status, urgency)"
             )
 
     # ------------------------------------------------------------------
@@ -326,6 +341,8 @@ class MemoryStore:
         key: str | None = None,
         importance: float = 0.5,
         confidence: float = 0.8,
+        urgency: float = 0.0,
+        due_at: str | None = None,
         source_message_ids: list[int] | None = None,
         pinned: bool = False,
         metadata: dict | None = None,
@@ -347,17 +364,19 @@ class MemoryStore:
                 ).fetchone()
                 if old and compact_whitespace(old["content"]) == content:
                     self.conn.execute(
-                        "UPDATE memories SET importance=MAX(importance, ?), updated_at=?, "
-                        "access_count=access_count+1 WHERE id=?",
-                        (importance, now, old["id"]),
+                        "UPDATE memories SET importance=MAX(importance, ?), "
+                        "urgency=MAX(urgency, ?), due_at=COALESCE(?, due_at), "
+                        "updated_at=?, access_count=access_count+1 WHERE id=?",
+                        (importance, urgency, due_at, now, old["id"]),
                     )
                     return int(old["id"])
             cur = self.conn.execute(
                 """
                 INSERT INTO memories
                     (conversation_id, kind, key, content, importance, confidence,
-                     source_message_ids, status, pinned, created_at, updated_at, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+                     urgency, due_at, source_message_ids, status, pinned, created_at,
+                     updated_at, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
                 """,
                 (
                     conversation_id,
@@ -366,6 +385,8 @@ class MemoryStore:
                     content,
                     max(0.0, min(1.0, importance)),
                     max(0.0, min(1.0, confidence)),
+                    max(0.0, min(1.0, urgency)),
+                    due_at,
                     source_json,
                     1 if pinned else 0,
                     now,
@@ -418,8 +439,9 @@ class MemoryStore:
                 """
                 SELECT * FROM memories
                 WHERE conversation_id=? AND status='active'
-                  AND (pinned=1 OR kind IN ('identity','preference','summary'))
-                ORDER BY pinned DESC,
+                  AND (pinned=1 OR kind IN ('identity','preference','summary')
+                       OR (urgency >= 0.6 AND due_at IS NOT NULL))
+                ORDER BY pinned DESC, urgency DESC,
                          CASE kind WHEN 'summary' THEN 1 ELSE 0 END ASC,
                          importance DESC, updated_at DESC
                 LIMIT ?
@@ -448,7 +470,7 @@ class MemoryStore:
                     JOIN memories m ON m.id = f.memory_id
                     WHERE memories_fts MATCH ?
                       AND m.conversation_id=? AND m.status='active'
-                    ORDER BY rank ASC, m.importance DESC
+                    ORDER BY rank ASC, (m.importance + 0.7 * m.urgency) DESC
                     LIMIT ?
                     """,
                     (match, conversation_id, max(limit * 4, 20)),
@@ -477,7 +499,7 @@ class MemoryStore:
                     SELECT * FROM memories
                     WHERE conversation_id=? AND status='active'
                       AND (content LIKE ? OR key LIKE ?)
-                    ORDER BY importance DESC, updated_at DESC
+                    ORDER BY (importance + 0.7 * urgency) DESC, updated_at DESC
                     LIMIT ?
                     """,
                     (conversation_id, like, like, max(limit * 4, 20)),
@@ -539,7 +561,11 @@ class MemoryStore:
         elif key.endswith(":birthday"):
             label = "生日"
         content = compact_whitespace(item.get("content", ""))
-        return f"- {label}：{content}"
+        urgency = float(item.get("urgency") or 0.0)
+        due = item.get("due_at")
+        prefix = "【急】" if urgency >= 0.7 else ""
+        suffix = f"（截止 {due}）" if due else ""
+        return f"- {prefix}{label}：{content}{suffix}"
 
     # ------------------------------------------------------------------
     # Consolidation
@@ -551,7 +577,7 @@ class MemoryStore:
         threshold: int = 30,
         batch_size: int = 20,
         keep_recent: int = 16,
-        summarizer: Callable[[list[dict]], str] | None = None,
+        summarizer: Callable[[list[dict]], str | dict] | None = None,
     ) -> dict | None:
         messages = self.unconsolidated_messages(conversation_id)
         if len(messages) < max(threshold, batch_size + keep_recent):
@@ -560,21 +586,57 @@ class MemoryStore:
         batch = older[:batch_size]
         if len(batch) < 4:
             return None
-        summary = summarizer(batch) if summarizer else self.extractive_summary(batch)
-        summary = compact_whitespace(summary)
+
+        raw_result = summarizer(batch) if summarizer else self.extractive_summary(batch)
+        graded = isinstance(raw_result, dict)
+        if graded:
+            result = raw_result
+            summary = clean_text(str(result.get("summary") or ""))
+            importance = _clamp(result.get("importance", 0.58), 0.1, 0.95)
+            urgency = _clamp(result.get("urgency", 0.0), 0.0, 1.0)
+            confidence = _clamp(result.get("confidence", 0.7), 0.0, 1.0)
+            pinned = bool(result.get("pinned")) and importance >= 0.8
+            due_at = _clean_due(result.get("due"))
+        else:
+            summary = compact_whitespace(str(raw_result or ""))
+            importance, urgency, confidence, pinned, due_at = 0.58, 0.0, 0.7, False, None
+
         if not summary:
             return None
+        if not summary.startswith("- "):
+            # A plain paragraph is not a memory card; keep it out of the active
+            # summary layer rather than silently accepting a bad format.
+            return None
+
         memory_id = self.add_memory(
             conversation_id,
             "summary",
             summary,
-            importance=0.58,
-            confidence=0.7,
+            importance=importance,
+            confidence=confidence,
+            urgency=urgency,
+            due_at=due_at,
+            pinned=pinned,
             source_message_ids=[int(m["id"]) for m in batch],
-            metadata={"from_position": batch[0]["position"], "to_position": batch[-1]["position"]},
+            metadata={
+                "from_position": batch[0]["position"],
+                "to_position": batch[-1]["position"],
+                "graded": graded,
+            },
         )
         self.mark_consolidated([int(m["id"]) for m in batch])
-        return {"memory_id": memory_id, "messages": len(batch), "summary": summary}
+        return {
+            "memory_id": memory_id,
+            "messages": len(batch),
+            "summary": summary,
+            "importance": importance,
+            "urgency": urgency,
+            "confidence": confidence,
+            "pinned": pinned,
+            "due_at": due_at,
+            "graded": graded,
+        }
+
 
     def extractive_summary(self, messages: list[dict], max_chars: int = 600) -> str:
         """Cheap fallback summary that preserves user-side facts and topics."""
@@ -591,9 +653,8 @@ class MemoryStore:
             by_date.setdefault(date, []).append(clause)
         lines: list[str] = []
         for date in sorted(by_date)[-6:]:
-            lines.append(f"{date}：")
-            for clause in by_date[date][:4]:
-                lines.append(f"- {clause}")
+            clauses = "；".join(by_date[date][:4])
+            lines.append(f"- {date}：{clauses}")
         text = "\n".join(lines).strip()
         if not text:
             text = "（这段时间主要是日常闲聊，没有提取到稳定信息）"
@@ -728,3 +789,20 @@ class MemoryStore:
             for row in rows:
                 self._fts_add(int(row["id"]), row["content"], row["key"])
         return len(rows)
+
+
+def _clamp(value, low: float, high: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = low
+    return round(max(low, min(high, number)), 3)
+
+
+def _clean_due(value) -> str | None:
+    if not value:
+        return None
+    text = str(value).strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return text
+    return None

@@ -79,6 +79,36 @@ class MemoryStoreTests(unittest.TestCase):
         self.assertGreaterEqual(prepared.memory_count, 1)
         self.assertIn("冰美式", "\n".join(m["content"] for m in prepared.memories))
 
+
+    def test_structured_summary_scores_are_persisted(self):
+        for i in range(45):
+            self.store.add_message("c1", "user" if i % 2 == 0 else "assistant", f"第{i}轮：测试评分。")
+        result = self.store.consolidate(
+            "c1",
+            threshold=30,
+            batch_size=20,
+            keep_recent=8,
+            summarizer=lambda batch: {
+                "summary": "- 我记得他今天在测试记忆评分。\n- 我答应之后继续观察。",
+                "importance": 0.9,
+                "urgency": 0.8,
+                "confidence": 0.9,
+                "pinned": True,
+                "due": "2026-11-01",
+            },
+        )
+        self.assertIsNotNone(result)
+        self.assertTrue(result["graded"])
+        self.assertEqual(result["importance"], 0.9)
+        self.assertEqual(result["urgency"], 0.8)
+        row = self.store.conn.execute(
+            "select importance,urgency,confidence,pinned,due_at from memories where id=?",
+            (result["memory_id"],),
+        ).fetchone()
+        self.assertEqual(row["urgency"], 0.8)
+        self.assertEqual(row["pinned"], 1)
+        self.assertEqual(row["due_at"], "2026-11-01")
+
     def test_consolidation_creates_summary_and_marks_messages(self):
         for i in range(45):
             self.store.add_message("c1", "user" if i % 2 == 0 else "assistant", f"第{i}轮：今天聊了工作和晚饭。")

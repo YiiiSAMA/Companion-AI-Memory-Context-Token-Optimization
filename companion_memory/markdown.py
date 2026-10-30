@@ -117,7 +117,9 @@ def render_card(memory: dict) -> str:
         f"type: {_yaml(kind)}",
         f"key: {_yaml(memory.get('key'))}",
         f"importance: {_yaml(round(float(memory.get('importance') or 0), 3))}",
+        f"urgency: {_yaml(round(float(memory.get('urgency') or 0), 3))}",
         f"confidence: {_yaml(round(float(memory.get('confidence') or 0), 3))}",
+        f"due: {_yaml(memory.get('due_at'))}",
         f"status: {_yaml(memory.get('status') or 'active')}",
         f"pinned: {_yaml(bool(memory.get('pinned')))}",
         f"created_at: {_yaml(memory.get('created_at'))}",
@@ -127,7 +129,7 @@ def render_card(memory: dict) -> str:
         "",
         f"### {_KIND_LABEL.get(kind, '记忆')} · {memory_id}",
         "",
-        f"`[{tag}|{memory_id}|{float(memory.get('importance') or 0):.2f}]` {content}",
+        f"`[{tag}|{memory_id}|{float(memory.get('importance') or 0):.2f}|{float(memory.get('urgency') or 0):.2f}]` {content}",
         "",
     ]
     if memory.get("superseded_by"):
