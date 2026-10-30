@@ -174,6 +174,23 @@ MEMORY_MARKDOWN_AUTO_EXPORT=1
 
 ---
 
+### 回填旧摘要
+
+启用 `MEMORY_CONSOLIDATION_MODE=llm` 之前生成的摘要不会自动重写。需要回填时：
+
+```bash
+# 先看有多少候选、试跑 3 条
+python examples/backfill_summaries.py --conversation-id qq-main --dry-run
+python examples/backfill_summaries.py --conversation-id qq-main --limit 3
+
+# 确认语气后回填剩余全部
+python examples/backfill_summaries.py --conversation-id qq-main
+```
+
+回填会读取每条旧摘要的 `source_message_ids`，调用上游模型重写，更新 SQLite 和 FTS，不会删除原始消息。只接受以 `- ` 开头的 bullet 摘要；模型输出不合格时会跳过，不会覆盖旧内容。
+
+---
+
 ## 快速开始
 
 要求：Python 3.10+，无需第三方依赖。
