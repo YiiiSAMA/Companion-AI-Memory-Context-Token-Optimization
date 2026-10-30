@@ -429,6 +429,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             "temperature": 0.2,
             "max_tokens": 900,
             "stream": False,
+            "response_format": {"type": "json_object"},
         }
         try:
             upstream = self.upstream.open(payload, stream=False)
@@ -502,6 +503,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             "temperature": 0.2,
             "max_tokens": 1000,
             "stream": False,
+            "response_format": {"type": "json_object"},
         }
         try:
             upstream = self.upstream.open(payload, stream=False)

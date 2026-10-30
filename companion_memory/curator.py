@@ -148,6 +148,7 @@ class MemoryCurator:
             "temperature": 0.1,
             "max_tokens": 1800,
             "stream": False,
+            "response_format": {"type": "json_object"},
         }
         upstream = self.upstream.open(payload, stream=False)
         raw = upstream.response.read()
