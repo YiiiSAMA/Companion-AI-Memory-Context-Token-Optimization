@@ -4,7 +4,7 @@ import unittest
 
 from companion_memory.config import Config
 from companion_memory.context import ContextBuilder, sanitize_tool_messages
-from companion_memory.db import MemoryStore
+from companion_memory.db import MemoryStore, clean_text
 
 
 class MemoryStoreTests(unittest.TestCase):
@@ -28,6 +28,13 @@ class MemoryStoreTests(unittest.TestCase):
         cleaned = sanitize_tool_messages(messages)
         self.assertEqual([m.get("role") for m in cleaned], ["system", "assistant", "tool", "user"])
         self.assertEqual(cleaned[2]["tool_call_id"], "call-1")
+
+
+    def test_system_reminder_is_removed(self):
+        self.assertEqual(
+            clean_text("记得吃饭<system_reminder>Current datetime: 2026-10-30</system_reminder>，别熬夜"),
+            "记得吃饭，别熬夜",
+        )
 
     def test_extracts_and_retrieves_facts(self):
         text = "我叫条猫，我喜欢喝冰美式，我讨厌香菜"

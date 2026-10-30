@@ -109,6 +109,8 @@ def render_card(memory: dict) -> str:
     kind = str(memory.get("kind") or "fact")
     tag = _KIND_TAG.get(kind, "FACT")
     content = str(memory.get("content") or "").strip()
+    if kind == "summary":
+        content = content.replace(" - ", "\n- ")
     front = [
         "---",
         f"id: {memory_id}",

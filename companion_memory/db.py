@@ -26,6 +26,7 @@ from typing import Any, Callable, Iterable
 from .tokens import compact_whitespace, estimate_tokens, text_of
 
 _CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+_SYSTEM_REMINDER_RE = re.compile(r"<system_reminder>.*?(?:</system_reminder>|$)", re.S)
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 
 _EXTRACT_PATTERNS: list[tuple[str, str, re.Pattern[str], float, int]] = [
@@ -55,8 +56,13 @@ def date_of(value: str) -> str:
     return (value or "")[:10]
 
 
+def clean_text(value: str) -> str:
+    """Remove AstrBot's injected timestamps and collapse whitespace."""
+    return compact_whitespace(_SYSTEM_REMINDER_RE.sub("", value or ""))
+
+
 def message_text(message: dict) -> str:
-    return compact_whitespace(text_of(message.get("content")))
+    return clean_text(text_of(message.get("content")))
 
 
 def message_hash(message: dict) -> str:
@@ -324,7 +330,7 @@ class MemoryStore:
         pinned: bool = False,
         metadata: dict | None = None,
     ) -> int:
-        content = compact_whitespace(content)
+        content = clean_text(content)
         if not content:
             raise ValueError("memory content is empty")
         self.ensure_conversation(conversation_id)
