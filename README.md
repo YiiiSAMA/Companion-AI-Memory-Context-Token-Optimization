@@ -231,6 +231,55 @@ python examples/backfill_summaries.py --conversation-id qq-main
 
 ---
 
+## 每日记忆校准（Memory Curator）
+
+每天 04:00（Asia/Shanghai）会自动运行一次记忆评分校准：
+
+```text
+最近 40 条对话 + 当前最重要的 30 张记忆卡
+→ 知言提出最多 10 条评分修改
+→ 系统校验、限幅、保护身份/承诺/pinned
+→ 写回 SQLite
+→ 重新导出 Markdown
+→ 写入 memory_reviews 审计表 + JSON 审计文件
+```
+
+安全限制：
+
+- 单次 `importance` 最多变动 `±0.15`
+- 单次 `urgency` 最多变动 `±0.25`
+- `identity` / `commitment` 不允许降低 importance
+- 已 `pinned` 的卡不允许取消 pin
+- 没有证据的卡不改
+- 每次应用前自动备份数据库，保留最近 14 份
+- 只改评分，不改记忆正文，不删原始消息
+
+手动试跑：
+
+```bash
+# 只看建议，不写回
+python -m companion_memory curate --conversation-id qq-main --dry-run
+
+# 实际执行一次
+python -m companion_memory curate --conversation-id qq-main
+```
+
+服务器上的 cron：
+
+```text
+/etc/cron.d/companion-memory-curator
+每天 04:00
+```
+
+审计位置：
+
+```text
+data/memory-reviews/review-YYYYMMDD-HHMMSS.json
+SQLite: memory_reviews 表
+```
+
+---
+
 ## 快速开始
 
 要求：Python 3.10+，无需第三方依赖。
@@ -337,6 +386,7 @@ python -m unittest discover -s tests -v
 - 新事实替换旧事实
 - 预算裁剪但保留最新用户消息
 - 摘要巩固与消息标记（支持知言第一人称 LLM 摘要）
+- 每日 Memory Curator 自动校准评分
 - Markdown 记忆卡导出
 - 代理注入记忆并报告节省
 - SSE 流式透传
@@ -383,6 +433,9 @@ python -m companion_memory export --conversation-id qq-main
 
 # 手动巩固
 python -m companion_memory consolidate --conversation-id qq-main
+
+# 手动跑一次记忆评分校准
+python -m companion_memory curate --conversation-id qq-main --dry-run
 
 # 导出 Markdown 记忆卡
 python -m companion_memory export-md --conversation-id qq-main
