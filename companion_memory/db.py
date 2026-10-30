@@ -595,7 +595,7 @@ class MemoryStore:
             importance = _clamp(result.get("importance", 0.58), 0.1, 0.95)
             urgency = _clamp(result.get("urgency", 0.0), 0.0, 1.0)
             confidence = _clamp(result.get("confidence", 0.7), 0.0, 1.0)
-            pinned = bool(result.get("pinned")) and importance >= 0.8
+            pinned = bool(result.get("pinned")) and importance >= 0.75
             due_at = _clean_due(result.get("due"))
         else:
             summary = compact_whitespace(str(raw_result or ""))

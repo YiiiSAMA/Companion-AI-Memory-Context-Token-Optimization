@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import time
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -489,6 +490,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     "confidence：0–1，原文越明确越高。\n"
                     "pinned：只有明确说“记住/别忘”，或身份/边界/安全信息才为 true，否则 false。\n"
                     "due：只有明确日期才写 YYYY-MM-DD，否则 null。"
+                    f"今天是 {datetime.now().strftime('%Y-%m-%d')}；如果他说“明天/后天/本周几”，"
+                    "请换算成具体日期写入 due；没有明确时间就写 null。"
                 ),
             },
             {"role": "user", "content": transcript},
