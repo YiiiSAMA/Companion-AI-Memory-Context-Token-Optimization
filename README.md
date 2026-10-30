@@ -280,6 +280,56 @@ SQLite: memory_reviews 表
 
 ---
 
+## 自我连续性（Self-Continuity）
+
+每天 04:05 生成一份“昨天的我”，只从**原始对话**写，不从上一份自我笔记再总结：
+
+```text
+- 我昨天在想：...
+- 我没说完 / 没想完：...
+- 我今天想继续：...
+- 我对我们 / 对我自己的新理解：...
+- 我不想丢：...
+```
+
+存储与镜像：
+
+```text
+SQLite kind='self'
+Markdown: self/YYYY-MM-DD.md
+最新一份: self.md
+```
+
+注入规则：
+
+- 新一天后的第一条消息，或距上次聊天超过 `MEMORY_SELF_INJECT_GAP_HOURS`（默认 6 小时），注入一次
+- 连续聊天不重复注入
+- 只注入最新的“昨天的我”，约 300–500 tokens
+- 不覆盖当前人格，不删除原始消息
+
+配置：
+
+```bash
+MEMORY_SELF_CONTINUITY=1
+MEMORY_SELF_INJECT_GAP_HOURS=6
+MEMORY_SELF_NOTE_MAX_TOKENS=350
+```
+
+手动生成：
+
+```bash
+python -m companion_memory self-note --conversation-id qq-main --hours 24
+```
+
+cron：
+
+```text
+/etc/cron.d/companion-memory-self-note
+每天 04:05
+```
+
+---
+
 ## 快速开始
 
 要求：Python 3.10+，无需第三方依赖。
@@ -387,6 +437,7 @@ python -m unittest discover -s tests -v
 - 预算裁剪但保留最新用户消息
 - 摘要巩固与消息标记（支持知言第一人称 LLM 摘要）
 - 每日 Memory Curator 自动校准评分
+- 每日自我笔记 + 新会话自我连续性注入
 - Markdown 记忆卡导出
 - 代理注入记忆并报告节省
 - SSE 流式透传
@@ -436,6 +487,9 @@ python -m companion_memory consolidate --conversation-id qq-main
 
 # 手动跑一次记忆评分校准
 python -m companion_memory curate --conversation-id qq-main --dry-run
+
+# 手动生成“昨天的我”
+python -m companion_memory self-note --conversation-id qq-main --hours 24
 
 # 导出 Markdown 记忆卡
 python -m companion_memory export-md --conversation-id qq-main
