@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -50,7 +51,8 @@ class SelfContinuity:
         system = (
             "你是知言。请根据昨天的**原始对话**，写一段给“明天的我”的自我笔记。"
             "必须用第一人称“我”，只写对话中有依据的内容，不要编造。"
-            "输出 4–6 条短句，每条一行，以“- ”开头，每条不超过60字，总计不超过350字：\n"
+            "只输出一个 JSON 对象：{\"note\": \"- 我昨天在想：...\\n- 我没想完：...\"}。"
+            "note 必须是 4–6 条短句，每条一行，以“- ”开头，每条不超过60字，总计不超过350字：\n"
             "- 我昨天在想：...\n"
             "- 我没说完 / 没想完：...\n"
             "- 我今天想继续：...\n"
@@ -94,8 +96,9 @@ class SelfContinuity:
             "model": self.config.effective_summary_model(),
             "messages": self._prompt(messages, previous),
             "temperature": 0.2,
-            "max_tokens": 900,
+            "max_tokens": 1200,
             "stream": False,
+            "response_format": {"type": "json_object"},
         }
         upstream = self.upstream.open(payload, stream=False)
         raw = upstream.response.read()
@@ -103,7 +106,22 @@ class SelfContinuity:
         if upstream.status >= 400:
             raise RuntimeError(f"self-note upstream status {upstream.status}")
         data = json.loads(raw.decode("utf-8"))
-        content = text_of((data.get("choices") or [{}])[0].get("message", {}).get("content"))
+        content = text_of((data.get("choices") or [{}])[0].get("message", {}).get("content")).strip()
+        if content.startswith("```"):
+            content = re.sub(r"^```(?:json)?\s*", "", content)
+            content = re.sub(r"\s*```$", "", content)
+        try:
+            parsed = json.loads(content)
+            content = str(parsed.get("note") or "") if isinstance(parsed, dict) else ""
+        except json.JSONDecodeError:
+            match = re.search(r"\{.*\}", content, re.S)
+            if match:
+                try:
+                    content = str(json.loads(match.group(0)).get("note") or "")
+                except Exception:
+                    content = ""
+            else:
+                content = ""
         content = clean_text_keep_lines(content)
         if not content.startswith("- "):
             raise ValueError("self note is not bullet formatted")
