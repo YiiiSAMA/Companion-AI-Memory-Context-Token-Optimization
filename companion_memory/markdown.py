@@ -106,6 +106,9 @@ def _target_file(memory: dict) -> str:
     if kind == "relationship":
         return "relationships.md"
     if kind == "self":
+        key = str(memory.get("key") or "")
+        if key.startswith("self:"):
+            return f"self/{key[5:]}.md"
         return f"self/{_date_of(memory)}.md"
     if kind == "episode":
         return f"episodes/{_date_of(memory)}.md"
