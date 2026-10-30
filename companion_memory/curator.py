@@ -281,11 +281,13 @@ class MemoryCurator:
             self.mirror.export(conversation_id)
         audit_dir = Path(self.config.db_path).parent / "memory-reviews"
         audit_dir.mkdir(parents=True, exist_ok=True)
+        audit_dir.chmod(0o700)
         audit_path = audit_dir / f"review-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
         audit_path.write_text(
             json.dumps({"proposal": proposal, "result": result}, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
+        audit_path.chmod(0o600)
         return {**proposal, **result, "audit": str(audit_path)}
 
     def _backup(self) -> str:
@@ -298,6 +300,7 @@ class MemoryCurator:
             src.backup(dst)
         dst.close()
         src.close()
+        target.chmod(0o600)
         for old in sorted(backup_dir.glob("memory-before-curator-*.db"))[:-14]:
             old.unlink(missing_ok=True)
         return str(target)
