@@ -191,6 +191,45 @@ python examples/backfill_summaries.py --conversation-id qq-main
 
 ---
 
+### 知言自评分（可选）
+
+启用 `MEMORY_CONSOLIDATION_MODE=llm` 后，摘要不再只是正文，还可以带结构化评分：
+
+```json
+{
+  "summary": "- 他明天十点考试，我答应九点半叫他。",
+  "importance": 0.8,
+  "urgency": 0.9,
+  "confidence": 0.95,
+  "pinned": true,
+  "due": "2026-10-31"
+}
+```
+
+- `importance`：身份/安全/关系里程碑更高，寒暄更低
+- `urgency`：今天/几小时内最高，本周次之，无期限为 0
+- `confidence`：原文越明确越高
+- `pinned`：只有明确“记住/别忘”、身份/边界/安全信息才为 true
+- `due`：只接受 `YYYY-MM-DD`；模型会把“明天/本周几”换算成具体日期
+
+系统会做校验和 clamp：
+
+- 摘要必须以 `- ` 开头
+- `importance` 限制在 `0.1–0.95`
+- `pinned` 还要求 `importance >= 0.75`
+- 非法 `due` 自动丢弃
+- 模型调用或 JSON 解析失败时回退到抽取式 bullet 摘要
+
+评分会写入 SQLite，并显示在 Markdown frontmatter；检索排序使用：
+
+```text
+相关度 + importance + 0.7 * urgency
+```
+
+已有旧摘要的 `urgency` 默认为 0、`due` 为空；新摘要开始带评分。若要回填旧摘要，需要重新用评分编码器处理。
+
+---
+
 ## 快速开始
 
 要求：Python 3.10+，无需第三方依赖。

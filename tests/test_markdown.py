@@ -48,6 +48,21 @@ class MarkdownMirrorTests(unittest.TestCase):
         # Summaries are grouped by ISO week, not dumped into a single file.
         self.assertTrue(any("summaries" in f for f in result["files"]), result["files"])
 
+
+    def test_scores_and_due_are_rendered(self):
+        self.store.add_memory(
+            "c1", "fact", "明天十点考试", key="fact:exam",
+            importance=0.9, urgency=0.8, due_at="2026-10-31",
+            source_message_ids=[7],
+        )
+        self.mirror.export("c1")
+        facts = Path(self.out, "facts.md").read_text(encoding="utf-8")
+        self.assertIn("importance: 0.9", facts)
+        self.assertIn("urgency: 0.8", facts)
+        self.assertIn('due: "2026-10-31"', facts)
+        self.assertIn("[FACT|", facts)
+        self.assertIn("|0.90|0.80]", facts)
+
     def test_superseded_cards_are_not_exported(self):
         first = self.store.add_memory("c1", "fact", "在阿里工作", key="fact:job", importance=0.7)
         self.store.add_memory("c1", "fact", "在字节工作", key="fact:job", importance=0.7)
