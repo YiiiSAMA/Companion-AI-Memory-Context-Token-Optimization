@@ -123,8 +123,13 @@ class SelfContinuity:
             else:
                 content = ""
         content = clean_text_keep_lines(content)
-        if not content.startswith("- "):
-            raise ValueError("self note is not bullet formatted")
+        lines = [line.strip() for line in content.splitlines() if line.strip()]
+        if not lines:
+            raise ValueError("self note is empty")
+        content = "\n".join(
+            line if line.startswith("- ") else "- " + line.lstrip("- ").strip()
+            for line in lines
+        )
         if dry_run:
             return {"dry_run": True, "content": content, "messages": len(messages)}
         memory_id = self.save_note(
