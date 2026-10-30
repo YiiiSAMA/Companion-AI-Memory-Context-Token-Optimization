@@ -99,7 +99,11 @@ def _target_file(memory: dict) -> str:
         return "preferences.md"
     if kind == "summary":
         return f"summaries/{_week_of(memory)}.md"
-    if kind in ("episode", "commitment", "relationship"):
+    if kind == "commitment":
+        return "open-loops.md"
+    if kind == "relationship":
+        return "relationships.md"
+    if kind == "episode":
         return f"episodes/{_date_of(memory)}.md"
     return "facts.md"
 
@@ -171,7 +175,7 @@ class MarkdownMirror:
             target.write_text("\n".join(cards), encoding="utf-8")
 
         # Always create core files so the layout is predictable.
-        for rel in ("identity.md", "preferences.md", "facts.md", "open-loops.md"):
+        for rel in ("identity.md", "preferences.md", "facts.md", "open-loops.md", "relationships.md"):
             path = tmp / rel
             if not path.exists():
                 path.write_text("# 暂无记录\n", encoding="utf-8")
@@ -204,7 +208,8 @@ class MarkdownMirror:
             "| `facts.md` | 其他稳定事实 |",
             "| `episodes/` | 按日期归档的事件 |",
             "| `summaries/` | 按周归档的摘要 |",
-            "| `open-loops.md` | 未完成承诺 |",
+            "| `open-loops.md` | 未完成承诺 / 约定 |",
+            "| `relationships.md` | 关系锚点、相处规则、边界 |",
             "",
             "> SQLite 是事实来源；这些文件是镜像，自动导出会覆盖手工修改。",
         ]

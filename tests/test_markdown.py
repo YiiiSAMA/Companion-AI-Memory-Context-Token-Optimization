@@ -63,6 +63,16 @@ class MarkdownMirrorTests(unittest.TestCase):
         self.assertIn("[FACT|", facts)
         self.assertIn("|0.90|0.80]", facts)
 
+
+    def test_commitments_and_relationships_have_own_files(self):
+        self.store.add_memory("c1", "commitment", "十一点睡，不喝酒。", key="commitment:pact", importance=0.95, pinned=True)
+        self.store.add_memory("c1", "relationship", "情绪不对时先陪一句。", key="relationship:rule", importance=0.9, pinned=True)
+        result = self.mirror.export("c1")
+        self.assertTrue(os.path.isfile(os.path.join(self.out, "open-loops.md")))
+        self.assertTrue(os.path.isfile(os.path.join(self.out, "relationships.md")))
+        self.assertIn("open-loops.md", result["files"])
+        self.assertIn("relationships.md", result["files"])
+
     def test_superseded_cards_are_not_exported(self):
         first = self.store.add_memory("c1", "fact", "在阿里工作", key="fact:job", importance=0.7)
         self.store.add_memory("c1", "fact", "在字节工作", key="fact:job", importance=0.7)

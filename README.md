@@ -121,7 +121,8 @@ data/memory-md/
 ├── identity.md          # 名字、生日等 pinned 身份
 ├── preferences.md       # 喜欢 / 不喜欢
 ├── facts.md             # 其他稳定事实
-├── open-loops.md        # 未完成承诺
+├── open-loops.md        # 未完成承诺 / 约定
+├── relationships.md     # 关系锚点、相处规则、边界
 ├── episodes/
 │   └── 2026-10-30.md
 ├── summaries/
