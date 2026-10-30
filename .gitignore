@@ -9,3 +9,9 @@ build/
 
 # Local-only deploy key for this repository
 .git-ssh/
+
+# Private raw-data backups
+backups/
+
+# Markdown memory mirror (private)
+data/memory-md/

@@ -110,6 +110,68 @@
 
 ---
 
+## Markdown 记忆镜像
+
+SQLite 仍是事实来源；Markdown 是额外生成的可读镜像，方便你查看、编辑、diff 和备份。
+
+```text
+data/memory-md/
+├── identity.md          # 名字、生日等 pinned 身份
+├── preferences.md       # 喜欢 / 不喜欢
+├── facts.md             # 其他稳定事实
+├── open-loops.md        # 未完成承诺
+├── episodes/
+│   └── 2026-10-30.md
+├── summaries/
+│   └── 2026-W44.md
+├── index.md
+├── manifest.json
+└── README.md
+```
+
+每张记忆卡包含 YAML frontmatter 和一条给模型读的紧凑记忆行：
+
+```markdown
+---
+id: mem_000123
+type: preference
+key: preference:like:coffee
+importance: 0.8
+confidence: 0.8
+status: active
+pinned: false
+source_messages: [1024, 1025]
+---
+
+### 偏好 · mem_000123
+
+`[PREF|mem_000123|0.80]` 用户喜欢喝冰美式
+```
+
+导出：
+
+```bash
+python -m companion_memory export-md --conversation-id qq-main
+```
+
+API：
+
+```text
+GET /v1/memory/markdown/export?conversation_id=qq-main
+```
+
+如果设置：
+
+```bash
+MEMORY_MARKDOWN_AUTO_EXPORT=1
+```
+
+代理会在每次成功回复后自动刷新镜像。自动导出会覆盖手工修改，因此不要直接编辑自动镜像；需要人工修改时先复制到另一个目录。
+
+**注意：Markdown 不会扩大模型上下文，也不会让模型权重真正记住。**它只是让记忆更可读、可审计、可备份；真正召回仍然依赖 FTS5 检索和每轮注入。
+
+---
+
 ## 快速开始
 
 要求：Python 3.10+，无需第三方依赖。
@@ -216,6 +278,7 @@ python -m unittest discover -s tests -v
 - 新事实替换旧事实
 - 预算裁剪但保留最新用户消息
 - 摘要巩固与消息标记
+- Markdown 记忆卡导出
 - 代理注入记忆并报告节省
 - SSE 流式透传
 - 代理鉴权
@@ -240,6 +303,8 @@ python -m unittest discover -s tests -v
 | `MEMORY_MAX_MEMORY_TOKENS` | `1100` | 记忆块预算 |
 | `MEMORY_CONSOLIDATION_THRESHOLD` | `30` | 触发巩固的消息数 |
 | `MEMORY_CONSOLIDATION_BATCH` | `20` | 每次巩固的消息数 |
+| `MEMORY_MARKDOWN_DIR` | `./data/memory-md` | Markdown 镜像目录 |
+| `MEMORY_MARKDOWN_AUTO_EXPORT` | `0` | 每次回复后自动刷新镜像 |
 | `MEMORY_CONSOLIDATION_MODE` | `extractive` | `extractive` 或 `llm` |
 | `MEMORY_SUMMARY_MODEL` | 空 | LLM 摘要模型，空则用上游模型 |
 
@@ -259,6 +324,9 @@ python -m companion_memory export --conversation-id qq-main
 
 # 手动巩固
 python -m companion_memory consolidate --conversation-id qq-main
+
+# 导出 Markdown 记忆卡
+python -m companion_memory export-md --conversation-id qq-main
 
 # 重建 FTS 索引
 python -m companion_memory rebuild-fts

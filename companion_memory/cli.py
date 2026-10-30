@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .config import Config
 from .db import MemoryStore
+from .markdown import MarkdownMirror
 from .server import run
 
 
@@ -62,8 +63,12 @@ def main(argv: list[str] | None = None) -> int:
     search.add_argument("--conversation-id", default="default")
     search.add_argument("--limit", type=int, default=8)
 
-    export = sub.add_parser("export", help="export one conversation")
+    export = sub.add_parser("export", help="export one conversation as JSON")
     export.add_argument("--conversation-id", default="default")
+
+    export_md = sub.add_parser("export-md", help="render active memories as Markdown cards")
+    export_md.add_argument("--conversation-id", default="default")
+    export_md.add_argument("--output", default=None, help="override MEMORY_MARKDOWN_DIR")
 
     consolidate = sub.add_parser("consolidate", help="compress old unconsolidated turns")
     consolidate.add_argument("--conversation-id", default="default")
@@ -97,6 +102,9 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(hits, ensure_ascii=False, indent=2))
         elif args.command == "export":
             print(json.dumps(store.export_conversation(args.conversation_id), ensure_ascii=False, indent=2))
+        elif args.command == "export-md":
+            mirror = MarkdownMirror(store, config)
+            print(json.dumps(mirror.export(args.conversation_id, args.output), ensure_ascii=False, indent=2))
         elif args.command == "consolidate":
             result = store.consolidate(
                 args.conversation_id,

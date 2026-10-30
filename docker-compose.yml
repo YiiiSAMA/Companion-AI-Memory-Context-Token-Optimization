@@ -3,9 +3,12 @@ services:
     build: .
     env_file: .env
     environment:
+      TZ: Asia/Shanghai
       MEMORY_HOST: 0.0.0.0
       MEMORY_PORT: 8787
       MEMORY_DB: /app/data/memory.db
+      MEMORY_MARKDOWN_DIR: /app/data/memory-md
+      MEMORY_MARKDOWN_AUTO_EXPORT: "1"
     ports:
       - "127.0.0.1:8787:8787"
     volumes:

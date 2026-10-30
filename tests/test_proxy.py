@@ -192,6 +192,23 @@ class ProxyTests(unittest.TestCase):
         )
         self.assertIn("[长期记忆", system_text)
 
+
+    def test_markdown_auto_export_after_reply(self):
+        self.config.markdown_auto_export = True
+        self.config.markdown_dir = os.path.join(self.tmp.name, "memory-md")
+        payload = {
+            "model": "mock-model",
+            "messages": [
+                {"role": "system", "content": "你是知言。"},
+                {"role": "user", "content": "我喜欢喝冰美式。"},
+            ],
+        }
+        response = self.post(payload)
+        self.assertEqual(response.status, 200)
+        response.read()
+        self.assertTrue(os.path.isfile(os.path.join(self.config.markdown_dir, "index.md")))
+        self.assertTrue(os.path.isfile(os.path.join(self.config.markdown_dir, "preferences.md")))
+
     def test_streaming_passthrough_and_storage(self):
         payload = {
             "model": "mock-model",

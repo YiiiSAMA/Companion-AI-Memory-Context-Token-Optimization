@@ -49,6 +49,8 @@ class Config:
     summary_model: str = ""
     enable_fact_extraction: bool = True
     enable_consolidation: bool = True
+    markdown_dir: str = "./data/memory-md"
+    markdown_auto_export: bool = False
 
     # Defaults
     default_conversation_id: str = "default"
@@ -81,6 +83,8 @@ class Config:
             summary_model=values.get("MEMORY_SUMMARY_MODEL", ""),
             enable_fact_extraction=values.get("MEMORY_ENABLE_FACT_EXTRACTION", "1") not in ("0", "false", "False"),
             enable_consolidation=values.get("MEMORY_ENABLE_CONSOLIDATION", "1") not in ("0", "false", "False"),
+            markdown_dir=values.get("MEMORY_MARKDOWN_DIR", "./data/memory-md"),
+            markdown_auto_export=values.get("MEMORY_MARKDOWN_AUTO_EXPORT", "0") not in ("0", "false", "False"),
             default_conversation_id=values.get("MEMORY_DEFAULT_CONVERSATION", "default"),
             log_level=values.get("MEMORY_LOG_LEVEL", "INFO"),
         )

@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 from .config import Config
 from .context import ContextBuilder
 from .db import MemoryStore, message_text
+from .markdown import MarkdownMirror
 from .tokens import estimate_messages_tokens, estimate_tokens, text_of
 from .upstream import UpstreamClient, parse_sse_line
 
@@ -41,6 +42,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
     store: MemoryStore
     builder: ContextBuilder
     upstream: UpstreamClient
+    mirror: MarkdownMirror
 
     def log_message(self, fmt: str, *args: Any) -> None:
         LOG.info("%s - %s", self.address_string(), fmt % args)
@@ -141,6 +143,14 @@ class ProxyHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/v1/memory/export":
             self._send_json(self.store.export_conversation(cid))
+            return
+        if parsed.path == "/v1/memory/markdown/export":
+            try:
+                result = self.mirror.export(cid)
+                self._send_json({"ok": True, **result})
+            except Exception as exc:
+                LOG.exception("markdown export failed")
+                self._send_json({"ok": False, "error": str(exc)}, 500)
             return
         if parsed.path == "/v1/memory/recent":
             try:
@@ -319,6 +329,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             latency_ms=latency_ms,
         )
         self._maybe_consolidate(cid)
+        self._maybe_export_markdown(cid)
 
         self.send_response(upstream.status)
         self.send_header("Content-Type", upstream.content_type or "application/json; charset=utf-8")
@@ -387,6 +398,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             latency_ms=latency_ms,
         )
         self._maybe_consolidate(cid)
+        self._maybe_export_markdown(cid)
         self.close_connection = True
 
 
@@ -438,6 +450,15 @@ class ProxyHandler(BaseHTTPRequestHandler):
             LOG.exception("LLM summarization failed; using extractive fallback")
             return fallback
 
+
+    def _maybe_export_markdown(self, cid: str) -> None:
+        if not self.config.markdown_auto_export:
+            return
+        try:
+            self.mirror.export(cid)
+        except Exception:
+            LOG.exception("markdown auto export failed")
+
     def _maybe_consolidate(self, cid: str) -> None:
         if not self.config.enable_consolidation:
             return
@@ -459,10 +480,17 @@ def build_server(config: Config) -> ThreadingHTTPServer:
     store = MemoryStore(config.db_path)
     builder = ContextBuilder(store, config)
     upstream = UpstreamClient(config)
+    mirror = MarkdownMirror(store, config)
     handler = type(
         "BoundProxyHandler",
         (ProxyHandler,),
-        {"config": config, "store": store, "builder": builder, "upstream": upstream},
+        {
+            "config": config,
+            "store": store,
+            "builder": builder,
+            "upstream": upstream,
+            "mirror": mirror,
+        },
     )
     server = ThreadingHTTPServer((config.host, config.port), handler)
     server.daemon_threads = True
