@@ -7,6 +7,7 @@ from companion_memory.config import Config
 from companion_memory.context import ContextBuilder
 from companion_memory.db import MemoryStore
 from companion_memory.self_continuity import SelfContinuity
+from companion_memory.server import ProxyHandler
 
 
 class SelfContinuityTests(unittest.TestCase):
@@ -29,6 +30,21 @@ class SelfContinuityTests(unittest.TestCase):
         self.assertIn("没想完", row["content"])
         self.assertTrue(Path(self.config.markdown_dir, "self.md").is_file())
         self.assertTrue(any(p.name.endswith(".md") for p in Path(self.config.markdown_dir, "self").glob("*")))
+
+
+    def test_self_note_injects_only_after_gap_or_new_day(self):
+        self.self_notes.save_note("c1", "- 我昨天在想：连续性是什么。", source_ids=[1])
+        holder = type("Holder", (), {})()
+        holder.config = self.config
+        holder.store = self.store
+        self.assertTrue(ProxyHandler._should_inject_self(holder, "c1"))
+        self.store.add_message("c1", "user", "刚聊过")
+        self.assertFalse(ProxyHandler._should_inject_self(holder, "c1"))
+        self.store.conn.execute(
+            "update messages set created_at='2026-01-01 00:00:00' where conversation_id='c1'"
+        )
+        self.store.conn.commit()
+        self.assertTrue(ProxyHandler._should_inject_self(holder, "c1"))
 
     def test_context_injects_self_note_only_when_requested(self):
         self.self_notes.save_note("c1", "- 我昨天在想：他说的连续是什么。", source_ids=[1])
