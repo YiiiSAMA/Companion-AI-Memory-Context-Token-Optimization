@@ -55,6 +55,8 @@ class Config:
     self_inject_gap_hours: int = 6
     self_note_max_tokens: int = 350
     self_note_style: str = "diary"
+    netease_enrichment_enabled: bool = True
+    netease_timeout_seconds: int = 6
 
     # Defaults
     default_conversation_id: str = "default"
@@ -93,6 +95,8 @@ class Config:
             self_inject_gap_hours=_env_int("MEMORY_SELF_INJECT_GAP_HOURS", 6),
             self_note_max_tokens=_env_int("MEMORY_SELF_NOTE_MAX_TOKENS", 350),
             self_note_style=values.get("MEMORY_SELF_NOTE_STYLE", "diary").strip().lower(),
+            netease_enrichment_enabled=values.get("MEMORY_NETEASE_ENRICHMENT", "1") not in ("0", "false", "False"),
+            netease_timeout_seconds=_env_int("MEMORY_NETEASE_TIMEOUT_SECONDS", 6),
             default_conversation_id=values.get("MEMORY_DEFAULT_CONVERSATION", "default"),
             log_level=values.get("MEMORY_LOG_LEVEL", "INFO"),
         )

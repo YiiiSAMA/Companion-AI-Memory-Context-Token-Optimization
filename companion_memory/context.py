@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from .config import Config
 from .db import MemoryStore, message_text
+from .netease import build_link_context
 from .tokens import estimate_messages_tokens, estimate_tokens, text_of, truncate_text
 
 
@@ -50,6 +51,8 @@ class PreparedContext:
     dropped_messages: int = 0
     self_injected: bool = False
     self_tokens: int = 0
+    link_injected: bool = False
+    link_tokens: int = 0
     memories: list[dict] = field(default_factory=list)
 
     @property
@@ -120,6 +123,18 @@ class ContextBuilder:
                     self_injected = True
 
         query = (query if query is not None else self.latest_user_text(messages)).strip()
+
+        link_tokens = 0
+        link_injected = False
+        if self.config.netease_enrichment_enabled and query:
+            link_block = build_link_context(query, timeout=self.config.netease_timeout_seconds)
+            if link_block:
+                if systems:
+                    systems[-1]["content"] = (text_of(systems[-1].get("content")) + "\n\n" + link_block).strip()
+                else:
+                    systems = [{"role": "system", "content": link_block}]
+                link_tokens = estimate_tokens(link_block)
+                link_injected = True
         memories = self.store.search_memories(
             conversation_id,
             query,
@@ -228,5 +243,7 @@ class ContextBuilder:
             dropped_messages=dropped,
             self_injected=self_injected,
             self_tokens=self_tokens,
+            link_injected=link_injected,
+            link_tokens=link_tokens,
             memories=memories,
         )

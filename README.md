@@ -335,6 +335,41 @@ cron：
 
 ---
 
+## 网易云歌词级陪听
+
+发给知言的网易云链接会在当前请求里自动解析：
+
+```text
+music.163.com / y.music.163.com / 163cn.tv
+→ 歌名、歌手、专辑
+→ 一段短歌词（只截取开头，不是完整歌词）
+→ 注入当前上下文
+```
+
+实现位置：
+
+```text
+companion_memory/netease.py
+ContextBuilder 自动检测最新用户消息里的链接
+```
+
+特点：
+
+- 只影响当前这一轮，不写入长期记忆
+- 链接解析结果约 150–250 tokens
+- 结果缓存 30 分钟，连续聊同一首歌不会反复请求
+- 解析失败时明确告诉模型“不要假装听过”
+- 不能听音频，只能读页面资料和歌词
+
+配置：
+
+```bash
+MEMORY_NETEASE_ENRICHMENT=1
+MEMORY_NETEASE_TIMEOUT_SECONDS=6
+```
+
+---
+
 ## 快速开始
 
 要求：Python 3.10+，无需第三方依赖。
