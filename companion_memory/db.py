@@ -601,11 +601,20 @@ class MemoryStore:
             ).fetchone()
         return dict(row) if row else None
 
+    def latest_diary_before(self, conversation_id: str, date: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM memories WHERE conversation_id=? AND kind='diary' "
+                "AND status='active' AND key < ? ORDER BY key DESC LIMIT 1",
+                (conversation_id, f"diary:{date}"),
+            ).fetchone()
+        return dict(row) if row else None
+
     def latest_diary_note(self, conversation_id: str) -> dict | None:
         with self._lock:
             row = self.conn.execute(
                 "SELECT * FROM memories WHERE conversation_id=? AND kind='diary' "
-                "AND status='active' ORDER BY created_at DESC, id DESC LIMIT 1",
+                "AND status='active' ORDER BY key DESC, id DESC LIMIT 1",
                 (conversation_id,),
             ).fetchone()
         return dict(row) if row else None

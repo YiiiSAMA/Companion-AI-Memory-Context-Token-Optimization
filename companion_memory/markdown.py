@@ -200,7 +200,7 @@ class MarkdownMirror:
             (tmp / "self.md").write_text(render_card(latest), encoding="utf-8")
         diary_cards = [m for m in memories if m.get("kind") == "diary" and m.get("status") == "active"]
         if diary_cards:
-            latest = max(diary_cards, key=lambda m: (str(m.get("created_at") or ""), int(m.get("id") or 0)))
+            latest = max(diary_cards, key=lambda m: (str(m.get("key") or ""), int(m.get("id") or 0)))
             (tmp / "diary.md").write_text(render_card(latest), encoding="utf-8")
 
         manifest = {
