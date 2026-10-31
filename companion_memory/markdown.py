@@ -118,6 +118,9 @@ def _target_file(memory: dict) -> str:
             return f"diary/{key[6:]}.md"
         return f"diary/{_date_of(memory)}.md"
     if kind == "episode":
+        key = str(memory.get("key") or "")
+        if key.startswith("episode:recovered-"):
+            return f"episodes/{key.split('recovered-', 1)[1]}.md"
         return f"episodes/{_date_of(memory)}.md"
     return "facts.md"
 
