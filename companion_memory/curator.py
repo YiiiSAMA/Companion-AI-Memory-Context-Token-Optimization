@@ -78,7 +78,7 @@ class MemoryCurator:
             SELECT id, kind, key, content, importance, urgency, confidence,
                    pinned, due_at, updated_at
             FROM memories
-            WHERE conversation_id=? AND status='active' AND kind != 'self'
+            WHERE conversation_id=? AND status='active' AND kind NOT IN ('self','diary')
             ORDER BY pinned DESC, urgency DESC, importance DESC, updated_at DESC
             LIMIT ?
             """,

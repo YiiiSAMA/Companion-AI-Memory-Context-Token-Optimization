@@ -42,6 +42,7 @@ _KIND_LABEL = {
     "commitment": "承诺",
     "relationship": "关系",
     "self": "自我",
+    "diary": "日记",
 }
 
 _KIND_TAG = {
@@ -53,6 +54,7 @@ _KIND_TAG = {
     "commitment": "PROMISE",
     "relationship": "REL",
     "self": "SELF",
+    "diary": "DIARY",
 }
 
 
@@ -110,6 +112,11 @@ def _target_file(memory: dict) -> str:
         if key.startswith("self:"):
             return f"self/{key[5:]}.md"
         return f"self/{_date_of(memory)}.md"
+    if kind == "diary":
+        key = str(memory.get("key") or "")
+        if key.startswith("diary:"):
+            return f"diary/{key[6:]}.md"
+        return f"diary/{_date_of(memory)}.md"
     if kind == "episode":
         return f"episodes/{_date_of(memory)}.md"
     return "facts.md"
@@ -182,7 +189,7 @@ class MarkdownMirror:
             target.write_text("\n".join(cards), encoding="utf-8")
 
         # Always create core files so the layout is predictable.
-        for rel in ("identity.md", "preferences.md", "facts.md", "open-loops.md", "relationships.md", "self.md"):
+        for rel in ("identity.md", "preferences.md", "facts.md", "open-loops.md", "relationships.md", "self.md", "diary.md"):
             path = tmp / rel
             if not path.exists():
                 path.write_text("# 暂无记录\n", encoding="utf-8")
@@ -191,6 +198,10 @@ class MarkdownMirror:
         if self_cards:
             latest = max(self_cards, key=lambda m: (str(m.get("created_at") or ""), int(m.get("id") or 0)))
             (tmp / "self.md").write_text(render_card(latest), encoding="utf-8")
+        diary_cards = [m for m in memories if m.get("kind") == "diary" and m.get("status") == "active"]
+        if diary_cards:
+            latest = max(diary_cards, key=lambda m: (str(m.get("created_at") or ""), int(m.get("id") or 0)))
+            (tmp / "diary.md").write_text(render_card(latest), encoding="utf-8")
 
         manifest = {
             "conversation_id": conversation_id,
@@ -224,6 +235,8 @@ class MarkdownMirror:
             "| `relationships.md` | 关系锚点、相处规则、边界 |",
             "| `self.md` | 最新一份“昨天的我” |",
             "| `self/` | 按日期归档的自我笔记 |",
+            "| `diary.md` | 最新一篇日记 |",
+            "| `diary/` | 按日期归档的日记 |",
             "",
             "> SQLite 是事实来源；这些文件是镜像，自动导出会覆盖手工修改。",
         ]

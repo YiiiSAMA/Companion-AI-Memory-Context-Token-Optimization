@@ -544,7 +544,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
     def _should_inject_self(self, cid: str) -> bool:
         if not self.config.self_continuity_enabled:
             return False
-        note = self.store.latest_self_note(cid)
+        note = self.store.latest_diary_note(cid) or self.store.latest_self_note(cid)
         if not note:
             return False
         last = self.store.last_activity_at(cid)

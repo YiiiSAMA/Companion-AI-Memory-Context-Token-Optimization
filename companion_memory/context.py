@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from .config import Config
@@ -102,9 +103,12 @@ class ContextBuilder:
         self_tokens = 0
         self_injected = False
         if inject_self and self.config.self_continuity_enabled:
-            note = self.store.latest_self_note(conversation_id)
+            note = self.store.latest_diary_note(conversation_id) or self.store.latest_self_note(conversation_id)
             if note:
                 note_text = str(note.get("content") or "").strip()
+                match = re.search(r"【给明天的我】(.*?)(?=【今天的日记】|$)", note_text, re.S)
+                if match:
+                    note_text = match.group(1).strip()
                 note_text = truncate_text(note_text, self.config.self_note_max_tokens)
                 if note_text:
                     self_block = "[自我连续性｜昨天的我]\n" + note_text + "\n[/自我连续性]"

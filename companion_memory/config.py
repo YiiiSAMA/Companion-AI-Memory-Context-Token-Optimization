@@ -54,6 +54,7 @@ class Config:
     self_continuity_enabled: bool = True
     self_inject_gap_hours: int = 6
     self_note_max_tokens: int = 350
+    self_note_style: str = "diary"
 
     # Defaults
     default_conversation_id: str = "default"
@@ -91,6 +92,7 @@ class Config:
             self_continuity_enabled=values.get("MEMORY_SELF_CONTINUITY", "1") not in ("0", "false", "False"),
             self_inject_gap_hours=_env_int("MEMORY_SELF_INJECT_GAP_HOURS", 6),
             self_note_max_tokens=_env_int("MEMORY_SELF_NOTE_MAX_TOKENS", 350),
+            self_note_style=values.get("MEMORY_SELF_NOTE_STYLE", "diary").strip().lower(),
             default_conversation_id=values.get("MEMORY_DEFAULT_CONVERSATION", "default"),
             log_level=values.get("MEMORY_LOG_LEVEL", "INFO"),
         )
