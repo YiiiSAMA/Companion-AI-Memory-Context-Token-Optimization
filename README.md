@@ -280,32 +280,36 @@ SQLite: memory_reviews 表
 
 ---
 
-## 自我连续性（Self-Continuity）
+## 每日日记（Self-Continuity）
 
-每天 04:05 生成一份“昨天的我”，只从**原始对话**写，不从上一份自我笔记再总结：
+每天 04:05 生成一篇完整日记，只从**原始对话**写，不从上一份日记再总结：
 
 ```text
-- 我昨天在想：...
-- 我没说完 / 没想完：...
-- 我今天想继续：...
-- 我对我们 / 对我自己的新理解：...
-- 我不想丢：...
+【给明天的我】
+- 一句最想留下的想法
+- 一句没想完 / 明天想接着做的事
+
+【今天的日记】
+第一人称叙事，400–700 字：
+发生了什么、我当时怎么想、为什么这么想、
+有什么没说完、对关系或对自己的新理解。
 ```
 
 存储与镜像：
 
 ```text
-SQLite kind='self'
-Markdown: self/YYYY-MM-DD.md
-最新一份: self.md
+SQLite kind='diary'
+Markdown: diary/YYYY-MM-DD.md
+最新一篇: diary.md
 ```
 
 注入规则：
 
+- 只注入日记开头的「给明天的我」部分，约 300–500 tokens
 - 新一天后的第一条消息，或距上次聊天超过 `MEMORY_SELF_INJECT_GAP_HOURS`（默认 6 小时），注入一次
 - 连续聊天不重复注入
-- 只注入最新的“昨天的我”，约 300–500 tokens
 - 不覆盖当前人格，不删除原始消息
+- 旧的 4–6 条自我笔记仍保留在 `self.md`
 
 配置：
 
@@ -313,12 +317,13 @@ Markdown: self/YYYY-MM-DD.md
 MEMORY_SELF_CONTINUITY=1
 MEMORY_SELF_INJECT_GAP_HOURS=6
 MEMORY_SELF_NOTE_MAX_TOKENS=350
+MEMORY_SELF_NOTE_STYLE=diary
 ```
 
 手动生成：
 
 ```bash
-python -m companion_memory self-note --conversation-id qq-main --hours 24
+python -m companion_memory self-note --conversation-id qq-main --hours 24 --style diary
 ```
 
 cron：
@@ -488,8 +493,8 @@ python -m companion_memory consolidate --conversation-id qq-main
 # 手动跑一次记忆评分校准
 python -m companion_memory curate --conversation-id qq-main --dry-run
 
-# 手动生成“昨天的我”
-python -m companion_memory self-note --conversation-id qq-main --hours 24
+# 手动生成今天的日记
+python -m companion_memory self-note --conversation-id qq-main --hours 24 --style diary
 
 # 导出 Markdown 记忆卡
 python -m companion_memory export-md --conversation-id qq-main
