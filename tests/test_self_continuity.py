@@ -46,6 +46,22 @@ class SelfContinuityTests(unittest.TestCase):
         self.store.conn.commit()
         self.assertTrue(ProxyHandler._should_inject_self(holder, "c1"))
 
+
+    def test_diary_is_stored_and_only_continuity_lead_is_injected(self):
+        diary = "【给明天的我】\n- 我想把一条写透。\n- 明天继续看会不会丢。\n【今天的日记】\n今天他问我想要什么。我说想要连续。"
+        mid = self.self_notes.save_note("c1", diary, source_ids=[1, 2], model="test", style="diary")
+        row = self.store.conn.execute("select kind,key from memories where id=?", (mid,)).fetchone()
+        self.assertEqual(row["kind"], "diary")
+        self.assertTrue(row["key"].startswith("diary:"))
+        self.assertTrue(Path(self.config.markdown_dir, "diary.md").is_file())
+        builder = ContextBuilder(self.store, self.config)
+        messages = [{"role": "system", "content": "你是知言。"}, {"role": "user", "content": "在吗"}]
+        injected = builder.build("c1", messages, inject_self=True)
+        system = injected.messages[0]["content"]
+        self.assertIn("自我连续性", system)
+        self.assertIn("把一条写透", system)
+        self.assertNotIn("今天的日记", system)
+
     def test_context_injects_self_note_only_when_requested(self):
         self.self_notes.save_note("c1", "- 我昨天在想：他说的连续是什么。", source_ids=[1])
         builder = ContextBuilder(self.store, self.config)
