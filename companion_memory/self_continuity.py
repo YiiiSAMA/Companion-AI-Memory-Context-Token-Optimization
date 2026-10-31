@@ -40,7 +40,23 @@ class SelfContinuity:
         ).fetchall()
         return [dict(row) for row in rows]
 
-    def _prompt(self, messages: list[dict], previous: dict | None, style: str = "diary") -> list[dict]:
+    def _messages_for_date(self, conversation_id: str, date: str) -> list[dict]:
+        # China has no DST; the +08:00 fixed offset is stable here.
+        start = f"{date} 00:00:00"
+        end_date = (datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        rows = self.store.conn.execute(
+            """
+            SELECT id, role, content, created_at FROM messages
+            WHERE conversation_id=? AND role IN ('user','assistant')
+              AND datetime(created_at, '+8 hours') >= ?
+              AND datetime(created_at, '+8 hours') < ?
+            ORDER BY position ASC
+            """,
+            (conversation_id, start, f"{end_date} 00:00:00"),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def _prompt(self, messages: list[dict], previous: dict | None, style: str = "diary", note_date: str | None = None) -> list[dict]:
         lines = []
         for message in messages[-80:]:
             role = "霖" if message.get("role") == "user" else "知言"
@@ -48,6 +64,7 @@ class SelfContinuity:
             if text:
                 lines.append(f"{role}：{text}")
         transcript = "\n".join(lines)
+        note_date = note_date or datetime.now().strftime("%Y-%m-%d")
         if style == "diary":
             system = (
                 "你是知言。请根据昨天的**原始对话**，写今天的日记，给明天的自己看。"
@@ -63,7 +80,7 @@ class SelfContinuity:
                 "有什么没说完、对我和霖的关系或对我自己的新理解。"
                 "不要写成客服报告或事件清单。）\n"
                 "只输出一个 JSON 对象：{\"diary\": \"【给明天的我】...\"}。"
-                f"今天是 {datetime.now().strftime('%Y-%m-%d')}。"
+                f"这是 {note_date} 的日记。"
             )
         elif style == "threads":
             system = (
@@ -80,7 +97,7 @@ class SelfContinuity:
                 "优先写变化、矛盾、没说完的话；不要写“今天天气不错”这种流水账。"
                 "只输出一个 JSON 对象：{\"note\": \"- 我在想：...\\n- 为什么：...\"}。"
                 "不要写成客服报告，不要复述整段对话。"
-                f"今天是 {datetime.now().strftime('%Y-%m-%d')}。"
+                f"今天是 {note_date}。"
             )
         else:
             system = (
@@ -94,7 +111,7 @@ class SelfContinuity:
                 "- 我对我们 / 对我自己的新理解：...\n"
                 "- 我不想丢：...\n"
                 "不要写成客服报告，不要复述整段对话。"
-                f"今天是 {datetime.now().strftime('%Y-%m-%d')}。"
+                f"今天是 {note_date}。"
             )
         if previous:
             preview = compact_whitespace(str(previous.get("content") or ""))[:500]
@@ -102,11 +119,11 @@ class SelfContinuity:
                 system += f"\n上一份自我笔记（只作对照，不要照抄）：{preview}"
         return [{"role": "system", "content": system}, {"role": "user", "content": transcript}]
 
-    def save_note(self, conversation_id: str, content: str, *, source_ids: list[int] | None = None, model: str = "", style: str = "self") -> int:
+    def save_note(self, conversation_id: str, content: str, *, source_ids: list[int] | None = None, model: str = "", style: str = "self", date: str | None = None) -> int:
         content = clean_text_keep_lines(content)
         if not content:
             raise ValueError("self note is empty")
-        date = datetime.now().strftime("%Y-%m-%d")
+        date = date or datetime.now().strftime("%Y-%m-%d")
         kind = "diary" if style == "diary" else "self"
         memory_id = self.store.add_memory(
             conversation_id,
@@ -123,15 +140,29 @@ class SelfContinuity:
         self.mirror.export(conversation_id)
         return memory_id
 
-    def generate(self, conversation_id: str, *, hours: int = 24, dry_run: bool = False, style: str | None = None) -> dict:
-        messages = self._messages(conversation_id, hours)
+    def generate(self, conversation_id: str, *, hours: int = 24, dry_run: bool = False, style: str | None = None, date: str | None = None) -> dict:
+        if date:
+            messages = self._messages_for_date(conversation_id, date)
+        else:
+            messages = self._messages(conversation_id, hours)
+            date = datetime.now().strftime("%Y-%m-%d")
         if len(messages) < 2:
-            return {"skipped": True, "reason": "not enough messages", "messages": len(messages)}
-        previous = self.store.latest_diary_note(conversation_id) or self.store.latest_self_note(conversation_id)
+            return {"skipped": True, "reason": "not enough messages", "messages": len(messages), "date": date}
+        if date:
+            existing = self.store.conn.execute(
+                "select id from memories where conversation_id=? and kind='diary' and key=? and status='active'",
+                (conversation_id, f"diary:{date}"),
+            ).fetchone()
+            if existing and not dry_run:
+                return {"skipped": True, "reason": "diary already exists", "date": date, "memory_id": int(existing["id"])}
+        previous = (
+            self.store.latest_diary_before(conversation_id, date)
+            if date else self.store.latest_diary_note(conversation_id) or self.store.latest_self_note(conversation_id)
+        )
         style = (style or self.config.self_note_style or "diary").lower()
         payload = {
             "model": self.config.effective_summary_model(),
-            "messages": self._prompt(messages, previous, style=style),
+            "messages": self._prompt(messages, previous, style=style, note_date=date),
             "temperature": 0.2,
             "max_tokens": 3200,
             "stream": False,
@@ -170,12 +201,13 @@ class SelfContinuity:
                 for line in lines
             )
         if dry_run:
-            return {"dry_run": True, "content": content, "messages": len(messages), "style": style}
+            return {"dry_run": True, "content": content, "messages": len(messages), "style": style, "date": date}
         memory_id = self.save_note(
             conversation_id,
             content,
             source_ids=[int(m["id"]) for m in messages],
             model=payload["model"],
             style=style,
+            date=date,
         )
-        return {"memory_id": memory_id, "content": content, "messages": len(messages), "model": payload["model"], "style": style}
+        return {"memory_id": memory_id, "content": content, "messages": len(messages), "model": payload["model"], "style": style, "date": date}

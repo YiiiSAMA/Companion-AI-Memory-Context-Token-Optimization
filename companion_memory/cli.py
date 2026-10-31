@@ -85,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
     self_note.add_argument("--hours", type=int, default=24)
     self_note.add_argument("--dry-run", action="store_true")
     self_note.add_argument("--style", choices=("diary", "threads", "classic"), default=None)
+    self_note.add_argument("--date", default=None, help="generate a diary for YYYY-MM-DD")
 
     sub.add_parser("rebuild-fts", help="rebuild the FTS index from stored memories")
 
@@ -141,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
                 hours=args.hours,
                 dry_run=args.dry_run,
                 style=args.style,
+                date=args.date,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
     finally:
