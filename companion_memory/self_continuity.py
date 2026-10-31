@@ -140,7 +140,7 @@ class SelfContinuity:
         self.mirror.export(conversation_id)
         return memory_id
 
-    def generate(self, conversation_id: str, *, hours: int = 24, dry_run: bool = False, style: str | None = None, date: str | None = None) -> dict:
+    def generate(self, conversation_id: str, *, hours: int = 24, dry_run: bool = False, style: str | None = None, date: str | None = None, force: bool = False) -> dict:
         if date:
             messages = self._messages_for_date(conversation_id, date)
         else:
@@ -153,7 +153,7 @@ class SelfContinuity:
                 "select id from memories where conversation_id=? and kind='diary' and key=? and status='active'",
                 (conversation_id, f"diary:{date}"),
             ).fetchone()
-            if existing and not dry_run:
+            if existing and not dry_run and not force:
                 return {"skipped": True, "reason": "diary already exists", "date": date, "memory_id": int(existing["id"])}
         previous = (
             self.store.latest_diary_before(conversation_id, date)
