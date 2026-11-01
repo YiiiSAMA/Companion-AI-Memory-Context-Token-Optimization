@@ -22,6 +22,38 @@ from .upstream import UpstreamClient, parse_sse_line
 
 LOG = logging.getLogger("companion_memory")
 _SAFE_ID = re.compile(r"[^A-Za-z0-9_.:\-]")
+INTERNAL_CONVERSATION_ID = "__internal_plugin__"
+
+
+def is_internal_llm_request(messages: list[dict]) -> bool:
+    """True for plugin-side classification/analysis calls, not main chat.
+
+    AstrBot gives every plugin call the same OpenAI-compatible provider and
+    header.  Internal calls generally have no persona system prompt, or use a
+    known self-learning classifier prompt.  Routing them to a side conversation
+    keeps labels such as "flirt" and JSON emotion tags out of Zhyan's context.
+    """
+    systems = [
+        text_of(m.get("content"))
+        for m in messages
+        if isinstance(m, dict) and m.get("role") == "system"
+    ]
+    joined_system = "\n".join(systems)
+    if not joined_system.strip():
+        return True
+    if "知言" not in joined_system:
+        return True
+    user_texts = [
+        message_text(m)
+        for m in messages
+        if isinstance(m, dict) and m.get("role") == "user"
+    ]
+    markers = (
+        "请分析以下用户消息属于什么类型的交互行为",
+        "交互类型",
+        "emotions",
+    )
+    return any(marker in text for text in user_texts for marker in markers)
 
 
 def _conversation_id_from(headers: Any, payload: dict, default: str) -> str:
@@ -193,15 +225,18 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self._send_error_json(400, "messages is empty")
             return
 
+        internal = is_internal_llm_request(messages)
         cid = _conversation_id_from(self.headers, payload, self.config.default_conversation_id)
+        if internal:
+            cid = INTERNAL_CONVERSATION_ID
         stream = bool(payload.get("stream"))
         model = str(payload.get("model") or self.config.upstream_model)
         started = time.monotonic()
-        inject_self = self._should_inject_self(cid)
+        inject_self = self._should_inject_self(cid) if not internal else False
 
         self.store.upsert_messages(cid, messages)
         latest_user = self.builder.latest_user_text(messages)
-        if self.config.enable_fact_extraction:
+        if self.config.enable_fact_extraction and not internal:
             # Process the recent user side, not only the newest turn.  This also
             # makes importing an existing history useful on the first request.
             user_texts = [
@@ -217,7 +252,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
         # If this request is already over budget, make a cheap extractive
         # summary of old turns *before* assembling the prompt.  This keeps the
         # first long request from dropping history without any replacement.
-        if self.config.enable_consolidation and estimate_messages_tokens(messages) > self.config.context_budget():
+        if not internal and self.config.enable_consolidation and estimate_messages_tokens(messages) > self.config.context_budget():
             try:
                 keep_recent = max(4, self.config.recent_turns * 2)
                 pending = self.store.unconsolidated_messages(cid)
@@ -312,7 +347,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             if choices and isinstance(choices[0], dict):
                 content = text_of((choices[0].get("message") or {}).get("content"))
             usage = parsed.get("usage") or {}
-        if content.strip():
+        if content.strip() and cid != INTERNAL_CONVERSATION_ID:
             self.store.add_message(cid, "assistant", content)
         prompt_tokens = int(usage.get("prompt_tokens") or 0)
         completion_tokens = int(usage.get("completion_tokens") or 0)
@@ -330,8 +365,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
             upstream_status=upstream.status,
             latency_ms=latency_ms,
         )
-        self._maybe_consolidate(cid)
-        self._maybe_export_markdown(cid)
+        if cid != INTERNAL_CONVERSATION_ID:
+            self._maybe_consolidate(cid)
+            self._maybe_export_markdown(cid)
 
         self.send_response(upstream.status)
         self.send_header("Content-Type", upstream.content_type or "application/json; charset=utf-8")
@@ -381,7 +417,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             upstream.conn.close()
 
         content = "".join(parts)
-        if content.strip():
+        if content.strip() and cid != INTERNAL_CONVERSATION_ID:
             self.store.add_message(cid, "assistant", content)
         prompt_tokens = int(usage.get("prompt_tokens") or 0)
         completion_tokens = int(usage.get("completion_tokens") or 0)
@@ -399,8 +435,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
             upstream_status=upstream.status,
             latency_ms=latency_ms,
         )
-        self._maybe_consolidate(cid)
-        self._maybe_export_markdown(cid)
+        if cid != INTERNAL_CONVERSATION_ID:
+            self._maybe_consolidate(cid)
+            self._maybe_export_markdown(cid)
         self.close_connection = True
 
 
