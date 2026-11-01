@@ -40,6 +40,7 @@ def sanitize_plugin_pollution(messages: list[dict]) -> list[dict]:
         text = content.strip()
         if role == "assistant" and (
             text in _INTERNAL_LABELS
+            or re.fullmatch(r"[a-z_]{2,20}", text)
             or re.fullmatch(r'\{"emotions":\s*\[.*\]\}', text)
             or ("user中午吃完了，吃的牛肉面" in text and "assistant中午吃了" in text)
         ):
