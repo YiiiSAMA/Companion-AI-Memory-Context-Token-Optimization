@@ -25,6 +25,33 @@ _SAFE_ID = re.compile(r"[^A-Za-z0-9_.:\-]")
 INTERNAL_CONVERSATION_ID = "__internal_plugin__"
 
 
+
+_INTERNAL_LABELS = {"早餐近况", "flirt", "chat", "support", "tease", "help", "[]"}
+
+
+def sanitize_plugin_pollution(messages: list[dict]) -> list[dict]:
+    """Drop known plugin labels/fabricated transcripts from incoming history."""
+    cleaned = []
+    for item in messages:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        content = text_of(item.get("content"))
+        text = content.strip()
+        if role == "assistant" and (
+            text in _INTERNAL_LABELS
+            or re.fullmatch(r'\{"emotions":\s*\[.*\]\}', text)
+            or ("user中午吃完了，吃的牛肉面" in text and "assistant中午吃了" in text)
+        ):
+            continue
+        if role == "user" and text.startswith("请分析以下用户消息属于什么类型的交互行为"):
+            continue
+        if role == "user" and text.startswith("这是什么bug") and "<Quoted Message>" in text:
+            item = dict(item)
+            item["content"] = "这是什么bug"
+        cleaned.append(item)
+    return cleaned
+
 def is_internal_llm_request(messages: list[dict]) -> bool:
     """True for plugin-side classification/analysis calls, not main chat.
 
@@ -221,6 +248,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             return
 
         messages = [m for m in payload["messages"] if isinstance(m, dict)]
+        messages = sanitize_plugin_pollution(messages)
         if not messages:
             self._send_error_json(400, "messages is empty")
             return
