@@ -248,8 +248,13 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self._send_error_json(400, "messages must be a list")
             return
 
-        messages = [m for m in payload["messages"] if isinstance(m, dict)]
-        messages = sanitize_plugin_pollution(messages)
+        raw_messages = [m for m in payload["messages"] if isinstance(m, dict)]
+        messages = sanitize_plugin_pollution(raw_messages)
+        if not messages:
+            # Never turn a plugin-internal request into a 400: if all of its
+            # messages looked like labels, keep the original list and let the
+            # internal-request router handle it.
+            messages = raw_messages
         if not messages:
             self._send_error_json(400, "messages is empty")
             return
